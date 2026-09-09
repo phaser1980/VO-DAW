@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SFX On-Call Studio</title>
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #1d2026;
+    --panel-hover: #262a32;
+    --border: #2e333c;
+    --text: #e8e9ec;
+    --text-dim: #8a8f99;
+    --accent: #ff6b35;
+    --accent-dim: #ff6b3533;
+    --good: #4ade80;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 20px 24px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  h1 {
+    margin: 0 0 2px;
+    font-size: 20px;
+    letter-spacing: 0.3px;
+  }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--text-dim); font-size: 13px; }
+
+  .search-row {
+    display: flex;
+    gap: 8px;
+    padding: 16px 24px 8px;
+  }
+  #q {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  #q:focus { outline: none; border-color: var(--accent); }
+  button.primary {
+    background: var(--accent);
+    color: #1a1a1a;
+    border: none;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button.primary:hover { opacity: 0.9; }
+
+  .controls-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 24px 12px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .controls-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  select {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 8px;
+  }
+
+  .tags-row {
+    display: flex;
+    gap: 8px;
+    padding: 0 24px 16px;
+    flex-wrap: wrap;
+  }
+  .tag-btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .tag-btn:hover { border-color: var(--accent); color: var(--text); }
+
+  #status {
+    padding: 0 24px;
+    color: var(--text-dim);
+    font-size: 13px;
+    min-height: 20px;
+  }
+
+  #results {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+    padding: 8px 24px 32px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    cursor: grab;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .card:hover { background: var(--panel-hover); border-color: var(--accent); }
+  .card.dragging { opacity: 0.5; }
+
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .card-name {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.3;
+    word-break: break-word;
+  }
+  .card-meta {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    margin-right: 4px;
+  }
+
+  .card-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .icon-btn {
+    background: #14161a;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    flex: 1;
+  }
+  .icon-btn:hover { border-color: var(--accent); }
+  .icon-btn.playing { background: var(--accent); color: #1a1a1a; border-color: var(--accent); }
+
+  .drag-hint {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 6px;
+    text-align: center;
+    opacity: 0.6;
+  }
+
+  .empty {
+    color: var(--text-dim);
+    padding: 40px 24px;
+    text-align: center;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SFX <span>On-Call</span> Studio</h1>
+  <div class="sub">Search Freesound's CC library, preview, grab the file, drop it into Reaper.</div>
+</header>
+
+<div class="search-row">
+  <input id="q" type="text" placeholder="helicopter approaching, boots on gravel, radio chatter..." autofocus>
+  <button class="primary" onclick="runSearch()">Search</button>
+</div>
+
+<div class="controls-row">
+  <label><input type="checkbox" id="safeOnly" checked> Safe license only (CC0 + Attribution)</label>
+  <label>Sort
+    <select id="sort">
+      <option value="score">Relevance</option>
+      <option value="rating_desc">Top rated</option>
+      <option value="duration_asc">Shortest first</option>
+      <option value="duration_desc">Longest first</option>
+    </select>
+  </label>
+</div>
+
+<div class="tags-row" id="quickTags"></div>
+
+<div id="status"></div>
+<div id="results"></div>
+
+<audio id="player"></audio>
+
+<script>
+const QUICK_TAGS = [
+  "footsteps gravel", "footsteps wood floor", "door open creak", "door slam",
+  "police siren arriving", "ambulance siren", "mess hall chatter crowd",
+  "military radio chatter", "helicopter flyby", "helicopter hover",
+  "gunfire single shot", "gunshot distant", "explosion", "crowd murmur indoor"
+];
+
+const tagsRow = document.getElementById("quickTags");
+QUICK_TAGS.forEach(t => {
+  const b = document.createElement("button");
+  b.className = "tag-btn";
+  b.textContent = t;
+  b.onclick = () => { document.getElementById("q").value = t; runSearch(); };
+  tagsRow.appendChild(b);
+});
+
+const player = document.getElementById("player");
+let currentPlayingBtn = null;
+
+document.getElementById("q").addEventListener("keydown", e => {
+  if (e.key === "Enter") runSearch();
+});
+
+async function runSearch() {
+  const q = document.getElementById("q").value.trim();
+  const status = document.getElementById("status");
+  const results = document.getElementById("results");
+  if (!q) return;
+
+  status.textContent = "Searching...";
+  results.innerHTML = "";
+
+  const safe = document.getElementById("safeOnly").checked ? "1" : "0";
+  const sort = document.getElementById("sort").value;
+
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&safe=${safe}&sort=${sort}`);
+    const data = await res.json();
+
+    if (data.error) {
+      status.textContent = "Error: " + data.error;
+      return;
+    }
+
+    const items = data.results || [];
+    if (items.length === 0) {
+      status.textContent = `No results for "${q}". Try broader or fewer words.`;
+      return;
+    }
+
+    status.textContent = `${data.count} results for "${q}" (showing ${items.length})`;
+    items.forEach(renderCard);
+  } catch (e) {
+    status.textContent = "Search failed: " + e.message;
+  }
+}
+
+function renderCard(item) {
+  const results = document.getElementById("results");
+  const preview = item.previews && (item.previews["preview-hq-mp3"] || item.previews["preview-lq-mp3"]);
+  if (!preview) return;
+
+  const filename = sanitizeFilename(item.name) + ".mp3";
+  const downloadUrl = `/api/download?url=${encodeURIComponent(preview)}&filename=${encodeURIComponent(filename)}`;
+
+  const card = document.createElement("div");
+  card.className = "card";
+  card.draggable = true;
+
+  card.innerHTML = `
+    <div class="card-top">
+      <div class="card-name">${escapeHtml(item.name)}</div>
+    </div>
+    <div class="card-meta">
+      <span class="badge">${escapeHtml(item.license && item.license.includes("0") ? "CC0" : "CC-BY")}</span>
+      ${item.duration.toFixed(1)}s &middot; by ${escapeHtml(item.username)} &middot; ★ ${(item.avg_rating || 0).toFixed(1)}
+    </div>
+    <div class="card-actions">
+      <button class="icon-btn play-btn">▶ Play</button>
+      <a class="icon-btn" href="${downloadUrl}" download="${filename}" style="text-decoration:none; text-align:center;">⬇ Download</a>
+    </div>
+    <div class="drag-hint">drag card onto Reaper (Chrome/Edge)</div>
+  `;
+
+  const playBtn = card.querySelector(".play-btn");
+  playBtn.onclick = () => togglePlay(preview, playBtn);
+
+  // Native drag-to-desktop / drag-into-app trick (Chrome/Edge support this
+  // via the DownloadURL data type). Firefox/Safari will just not do
+  // anything on drop — Download button always works as the fallback.
+  card.addEventListener("dragstart", e => {
+    e.dataTransfer.setData("DownloadURL", `audio/mpeg:${filename}:${location.origin}${downloadUrl}`);
+    card.classList.add("dragging");
+  });
+  card.addEventListener("dragend", () => card.classList.remove("dragging"));
+
+  results.appendChild(card);
+}
+
+function togglePlay(url, btn) {
+  if (currentPlayingBtn === btn && !player.paused) {
+    player.pause();
+    btn.classList.remove("playing");
+    btn.textContent = "▶ Play";
+    currentPlayingBtn = null;
+    return;
+  }
+  if (currentPlayingBtn) {
+    currentPlayingBtn.classList.remove("playing");
+    currentPlayingBtn.textContent = "▶ Play";
+  }
+  player.src = url;
+  player.play();
+  btn.classList.add("playing");
+  btn.textContent = "❚❚ Stop";
+  currentPlayingBtn = btn;
+}
+
+player.addEventListener("ended", () => {
+  if (currentPlayingBtn) {
+    currentPlayingBtn.classList.remove("playing");
+    currentPlayingBtn.textContent = "▶ Play";
+    currentPlayingBtn = null;
+  }
+});
+
+function sanitizeFilename(name) {
+  return name.replace(/[^a-z0-9_\-]+/gi, "_").slice(0, 60);
+}
+
+function escapeHtml(s) {
+  return (s || "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+</script>
+
+</body>
+</html>

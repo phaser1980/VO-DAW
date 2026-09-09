@@ -1,0 +1,29 @@
+[project]
+name = "statevo"
+version = "0.1.0"
+description = "StateVO — a voice-first DAW for spoken-word recording, editing, and social-ready export."
+requires-python = ">=3.12"
+readme = "README.md"
+dependencies = [
+    "PySide6>=6.6",
+    "sounddevice>=0.4.6",
+    "soundfile>=0.12.1",
+    "numpy>=1.26",
+    "pedalboard>=0.9",
+    "pyloudnorm>=0.1.1",
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pyinstaller>=6.0"]
+noise = ["noisereduce>=3.0"]
+
+[project.scripts]
+statevo = "statevo.app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["statevo*"]

@@ -1,0 +1,14 @@
+PySide6>=6.6
+sounddevice>=0.4.6
+soundfile>=0.12.1
+numpy>=1.26
+pedalboard>=0.9
+pyloudnorm>=0.1.1
+scipy>=1.11
+
+# optional but recommended — higher quality noise reduction stage
+noisereduce>=3.0
+
+# dev / packaging
+pytest>=8.0
+pyinstaller>=6.0
