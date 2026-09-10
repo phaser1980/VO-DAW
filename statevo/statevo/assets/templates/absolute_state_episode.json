@@ -1,0 +1,54 @@
+{
+  "id": "template-absolute-state",
+  "name": "Absolute State Episode",
+  "created_at": 0,
+  "sample_rate": 48000,
+  "channels": 1,
+  "tracks": [
+    {
+      "id": "track-voice",
+      "name": "Voice",
+      "kind": "voice",
+      "clips": [],
+      "volume_db": 0.0,
+      "muted": false,
+      "solo": false,
+      "collapsed": false
+    },
+    {
+      "id": "track-beds",
+      "name": "Beds / SFX",
+      "kind": "bed_sfx",
+      "clips": [],
+      "volume_db": 0.0,
+      "muted": false,
+      "solo": false,
+      "collapsed": true
+    }
+  ],
+  "takes": {},
+  "markers": [],
+  "voice_chain": {
+    "preset": "podcast",
+    "noise_reduction_enabled": true,
+    "noise_reduction_amount": 0.5,
+    "deesser_enabled": true,
+    "deesser_threshold_db": -20.0,
+    "deesser_frequency_hz": 6500.0,
+    "compressor_enabled": true,
+    "compressor_threshold_db": -22.0,
+    "compressor_ratio": 2.5,
+    "compressor_attack_ms": 10.0,
+    "compressor_release_ms": 150.0,
+    "eq_enabled": true,
+    "eq_hpf_hz": 75.0,
+    "eq_presence_db": 2.0,
+    "eq_air_db": 1.0,
+    "limiter_enabled": true,
+    "limiter_ceiling_db": -1.5
+  },
+  "loudness_target_lufs": -16.0,
+  "script_text": "# Cold Open\n\nToday on Absolute State...\n\n# Headlines\n\nIn news that shocked absolutely nobody...\n\n# Sign-off\n\nThat's the state of things. Until next time.",
+  "script_sections": [],
+  "version": 1
+}

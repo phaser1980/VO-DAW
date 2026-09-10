@@ -119,7 +119,7 @@ service).
 1. User hits **Record** → `MainWindow._start_recording` builds a take
    path and calls `AudioEngine.start_recording`.
 2. `sounddevice.InputStream`'s callback (a background thread) applies
-   input gain and pushes raw blocks into a `queue.SimpleQueue` — it never
+   input gain and pushes raw blocks into a `queue.Queue` — it never
    blocks and never touches Qt.
 3. A writer thread drains the queue, writes to a `soundfile.SoundFile`
    incrementally, and updates `AudioEngine.last_peak_level` (a plain
@@ -215,16 +215,14 @@ chunking that same logic into a callback rather than a redesign.
 - **Phase 1 — Priority loop (done).** Record → waveform → split/fade
   via `edit_ops` → voice chain → export with LUFS normalization and a
   loudness report.
-- **Phase 2 — Editing polish (mostly done).** Draggable trim/fade
-  handles, exact-range ripple deletion, undo/redo snapshots, audio-device
-  selection, and punch-in/out with two-second audible pre-roll are built.
-  A dedicated multi-take comping UI on top of `edit_ops.build_comp`
-  remains.
+- **Phase 2 — Editing polish.** Draggable trim/fade handles directly on
+  `WaveformView` (coordinate mapping already exists); a dedicated
+  multi-take comping UI on top of `edit_ops.build_comp`; punch-in/out
+  with audible pre-roll.
 - **Phase 3 — Streaming playback engine.** Replace render-then-play
   with the live mixing callback described in §8.
 - **Phase 4 — AI features.** Transcription, filler-word removal,
   smarter/learned noise reduction — all additive under `core/`, per §7.
-- **Phase 5 — Packaging & polish (in progress).** Windows setup/launch
-  scripts, in-app input/output device preferences, and a tested
-  PyInstaller build path are present. Signed installers, configurable
-  project sample rates, and additional templates remain.
+- **Phase 5 — Packaging & polish.** Signed installers per platform,
+  in-app device/sample-rate preferences (currently defaults-only),
+  additional project templates.

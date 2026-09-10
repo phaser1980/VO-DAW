@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VO-DAW — StateVO, a voice-first DAW with built-in Foley search</title>
+<meta name="description" content="Record the voice. Build the world around it after. StateVO is a voice-over DAW that runs in the browser, with Freesound SFX search you drag straight onto the timeline." />
+<meta name="color-scheme" content="dark" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230f1218'/><circle cx='50' cy='42' r='16' fill='%23ff4d4d'/><rect x='46' y='58' width='8' height='22' rx='4' fill='%2357c7ff'/></svg>" />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a20; --raised: #1e222a; --border: #262b33;
+    --text: #ecedef; --dim: #8b93a1; --amber: #e8a33d; --cyan: #57c7ff; --green: #5fd39a;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "IBM Plex Sans", system-ui, sans-serif; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: "Newsreader", Georgia, serif; font-weight: 500; margin: 0; }
+  code, .mono { font-family: "IBM Plex Mono", monospace; font-size: .92em; }
+  a { color: var(--cyan); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  a:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 24px; }
+
+  header.hero { padding: 72px 0 52px; border-bottom: 1px solid var(--border); }
+  .kicker { font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--dim); margin-bottom: 16px; }
+  .kicker span { color: var(--amber); }
+  h1.title { font-size: clamp(2.2rem, 5vw, 3.3rem); line-height: 1.08; letter-spacing: -.01em; max-width: 16ch; }
+  .subhead { margin-top: 18px; max-width: 58ch; font-size: 1.08rem; color: var(--dim); }
+
+  .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 30px; }
+  .btn {
+    display: inline-block; padding: 11px 20px; border-radius: 7px;
+    background: var(--cyan); color: #06121a; font-weight: 600; border: 1px solid var(--cyan);
+  }
+  .btn:hover { filter: brightness(1.08); text-decoration: none; }
+  .btn-ghost { background: transparent; color: var(--text); border-color: var(--border); }
+  .btn-ghost:hover { border-color: var(--cyan); text-decoration: none; }
+
+  section { padding: 54px 0; border-bottom: 1px solid var(--border); }
+  .section-title { font-size: 1.6rem; margin-bottom: 8px; }
+  .section-lede { color: var(--dim); max-width: 62ch; margin-bottom: 28px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 20px; }
+  .card h3 { font-size: 1.15rem; margin-bottom: 8px; }
+  .card p { color: var(--dim); font-size: .95rem; margin: 0; }
+
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 0; }
+  .steps li {
+    counter-increment: s; position: relative; padding-left: 44px; margin-bottom: 22px;
+    color: var(--dim);
+  }
+  .steps li::before {
+    content: counter(s); position: absolute; left: 0; top: -1px;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--raised); border: 1px solid var(--border);
+    color: var(--amber); font-family: "IBM Plex Mono", monospace; font-size: 13px;
+    display: grid; place-items: center;
+  }
+  .steps li b { color: var(--text); font-weight: 600; }
+  .steps code {
+    background: var(--raised); border: 1px solid var(--border);
+    padding: 1px 6px; border-radius: 4px; color: var(--text);
+  }
+
+  .status-row {
+    display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap;
+    padding: 13px 0; border-top: 1px solid var(--border);
+  }
+  .status-row:last-child { border-bottom: 1px solid var(--border); }
+  .status-row .label { min-width: 190px; font-weight: 500; display: flex; align-items: center; gap: 9px; }
+  .status-row .desc { color: var(--dim); font-size: .93rem; flex: 1; min-width: 240px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
+  .dot.part { background: var(--amber); }
+  .dot.todo { background: #4a5160; }
+
+  footer { padding: 40px 0 60px; color: var(--dim); font-size: .92rem; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="kicker">VO-DAW <span>/</span> StateVO</p>
+    <h1 class="title">Record the voice. Build the world around it after.</h1>
+    <p class="subhead">
+      A voice-over DAW that runs in a browser tab — multi-take recording, a
+      non-destructive timeline, a fixed voice chain, and LUFS-accurate export
+      presets. Foley search is built in: find a door slam, drag the card onto
+      the timeline, keep going.
+    </p>
+    <div class="cta">
+      <a class="btn" href="./">Open StateVO →</a>
+      <a class="btn btn-ghost" href="https://github.com/phaser1980/VO-DAW">Source on GitHub</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2 class="section-title">What it does</h2>
+    <p class="section-lede">
+      Everything that isn't spoken word has been left out on purpose. No MIDI,
+      no instruments, no piano roll, no routing matrix.
+    </p>
+    <div class="grid">
+      <div class="card">
+        <h3>Record</h3>
+        <p>Big red button, one voice track, multi-take. Record over the same
+        spot again and the takes stack — flick between them with ◀ ▶ without
+        losing any of them. A time selection turns Record into a punch-in.</p>
+      </div>
+      <div class="card">
+        <h3>Edit</h3>
+        <p>Non-destructive: split, trim from either edge, drag fade handles,
+        move clips between lanes, ripple-delete a fluffed line across every
+        track at once. Nothing ever overwrites recorded audio.</p>
+      </div>
+      <div class="card">
+        <h3>Foley, built in</h3>
+        <p>Search Freesound's Creative Commons library from the left panel,
+        preview inline, then drag the card onto a lane. Landing on a lane joins
+        that track; dropping below the last one makes a new track.</p>
+      </div>
+      <div class="card">
+        <h3>Voice chain</h3>
+        <p>Cleanup → de-ess → compress → EQ → limit, fixed and in that order,
+        with one-click Social / Podcast / Raw presets. The same graph runs for
+        monitoring and for the export render, so what you heard is what ships.</p>
+      </div>
+      <div class="card">
+        <h3>Script &amp; markers</h3>
+        <p>Import a .txt or .md script, pull section markers out of the
+        headings, and read from a teleprompter that scrolls with playback.</p>
+      </div>
+      <div class="card">
+        <h3>Export</h3>
+        <p>Reels / TikTok at −14 LUFS, Podcast at −16, or a clean WAV.
+        Normalisation happens before the limiter, then it re-measures and hands
+        you a loudness report next to the file.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2 class="section-title">Getting going</h2>
+    <p class="section-lede">
+      Recording and editing work the moment you open the page. The SFX search
+      needs one five-minute setup, because Freesound's API refuses direct
+      browser calls.
+    </p>
+    <ol class="steps">
+      <li><b>Open the app</b> and hit <code>Arm</code>, then <code>Record</code>.
+      Your browser will ask for the microphone once. Projects and takes live in
+      that browser's own storage — nothing is uploaded anywhere.</li>
+      <li><b>Get a free Freesound API key</b> at
+      <a href="https://freesound.org/apiv2/apply/">freesound.org/apiv2/apply</a>.</li>
+      <li><b>Deploy the proxy Worker</b> —
+      <a href="https://github.com/phaser1980/VO-DAW/tree/main/cloudflare-worker">forty lines, Cloudflare free tier</a>.
+      It holds the API key server-side so it never reaches the page.</li>
+      <li><b>Paste the Worker URL</b> into the ⚙ settings in the SFX panel and
+      hit Test connection. Search works from then on, on any machine you open
+      the app on.</li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2 class="section-title">Where things stand</h2>
+    <div class="status-list">
+      <div class="status-row">
+        <span class="label"><span class="dot"></span>Record → edit → export</span>
+        <span class="desc">Working end to end. Export loudness verified against pyloudnorm — a −14 LUFS Reels export measures −14.1.</span>
+      </div>
+      <div class="status-row">
+        <span class="label"><span class="dot"></span>Multi-track timeline</span>
+        <span class="desc">Lanes, waveforms, mute/solo/collapse, drag-and-drop from the SFX panel and from the desktop.</span>
+      </div>
+      <div class="status-row">
+        <span class="label"><span class="dot"></span>SFX search</span>
+        <span class="desc">Built into the app. Needs the Worker deployed once.</span>
+      </div>
+      <div class="status-row">
+        <span class="label"><span class="dot part"></span>Take comping</span>
+        <span class="desc">Take stacks and ◀ ▶ switching work. Picking the best sentence <em>across</em> takes still means splitting by hand.</span>
+      </div>
+      <div class="status-row">
+        <span class="label"><span class="dot part"></span>Desktop build</span>
+        <span class="desc">The PySide6 app is still in the repo under <code>statevo/</code> — better latency, real device control, no browser limits. The browser build is the one you can open anywhere.</span>
+      </div>
+      <div class="status-row">
+        <span class="label"><span class="dot todo"></span>Transcription &amp; filler removal</span>
+        <span class="desc">Architected for, not built. Would slot in behind the existing ripple-delete primitive.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    Built by <a href="https://github.com/phaser1980">phaser1980</a>.
+    Source on <a href="https://github.com/phaser1980/VO-DAW">GitHub</a>.
+    Audio stays in your browser — there is no server to send it to.
+  </div>
+</footer>
+
+</body>
+</html>

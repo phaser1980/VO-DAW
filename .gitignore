@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node / tooling
+node_modules/
+.wrangler/
+.dev.vars
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local audio scratch — never commit takes or exports
+*.wav
+*.mp3
+*.flac
+*.m4a
+!docs/vendor/*

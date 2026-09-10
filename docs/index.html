@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>StateVO — voice-first DAW with built-in Foley search</title>
+<meta name="description" content="A browser voice-over DAW: multi-take recording, non-destructive editing, a fixed voice chain, LUFS-accurate export presets, and a built-in Freesound SFX search you can drag straight onto the timeline." />
+<meta name="color-scheme" content="dark" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230f1218'/><circle cx='50' cy='42' r='16' fill='%23ff4d4d'/><rect x='46' y='58' width='8' height='22' rx='4' fill='%2357c7ff'/></svg>" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./css/app.css" />
+<script src="./vendor/lame.min.js"></script>
+</head>
+<body>
+
+<div id="app" class="app">
+
+  <!-- ------------------------------------------------------------- -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span class="brand-name">StateVO</span>
+      <span class="brand-sub">voice-first</span>
+    </div>
+
+    <input id="project-name" class="project-name" value="Untitled" spellcheck="false"
+           aria-label="Project name" />
+
+    <div class="topbar-actions">
+      <button id="btn-new" class="btn-ghost">New</button>
+      <button id="btn-open" class="btn-ghost">Open</button>
+      <button id="btn-save" class="btn-ghost">Save</button>
+      <button id="btn-import-proj" class="btn-ghost" title="Import a .statevo.json project">Import</button>
+      <button id="btn-export-proj" class="btn-ghost" title="Export the project file (not audio)">Backup</button>
+      <button id="btn-export" class="btn">Export audio</button>
+      <button id="btn-help" class="btn-ghost btn-icon" title="Keyboard shortcuts">?</button>
+    </div>
+  </header>
+
+  <!-- ------------------------------------------------------------- -->
+  <main class="main">
+
+    <aside id="sfx-panel" class="panel panel-left"></aside>
+    <div class="gutter gutter-left" data-target="left"></div>
+
+    <section class="centre">
+
+      <div class="transport">
+        <button id="btn-record" class="rec" title="Record (R)">
+          <span class="rec-dot"></span><span class="rec-label">Record</span>
+        </button>
+
+        <div class="transport-group">
+          <button id="btn-play" class="tbtn" title="Play / pause (Space)">▶</button>
+          <button id="btn-stop" class="tbtn" title="Stop (Esc)">■</button>
+          <button id="btn-home" class="tbtn" title="Back to start (Home)">⏮</button>
+        </div>
+
+        <div class="clock">
+          <span id="clock-main">0:00.0</span>
+          <span id="clock-total" class="clock-total">/ 0:00.0</span>
+        </div>
+
+        <div class="transport-group input-group">
+          <label class="lbl">In</label>
+          <select id="input-device" class="select-sm" title="Input device"></select>
+          <button id="btn-arm" class="tbtn tbtn-wide" title="Open the microphone">Arm</button>
+        </div>
+
+        <div class="meterbox">
+          <div class="meter" id="meter-in"><div class="meter-fill"></div><div class="meter-peak"></div></div>
+          <span class="meter-label">in</span>
+          <input id="input-gain" class="slider" type="range" min="-24" max="24" step="0.5" value="0"
+                 title="Input gain (dB)" />
+          <span id="input-gain-val" class="mono-sm">0.0 dB</span>
+        </div>
+
+        <label class="sfx-check monitor-check" title="Use headphones — speakers will feed back">
+          <input type="checkbox" id="chk-monitor" /><span>Monitor</span>
+        </label>
+
+        <div class="spacer"></div>
+
+        <div class="takebar">
+          <button id="btn-take-prev" class="tbtn" title="Previous take">◀</button>
+          <span id="take-label" class="mono-sm">no takes</span>
+          <button id="btn-take-next" class="tbtn" title="Next take">▶</button>
+        </div>
+
+        <div class="meterbox">
+          <span class="meter-label">out</span>
+          <div class="meter" id="meter-out"><div class="meter-fill"></div><div class="meter-peak"></div></div>
+        </div>
+      </div>
+
+      <div id="timeline" class="timeline"></div>
+
+      <div class="chainstrip">
+        <div class="chain-presets">
+          <label class="lbl">Voice chain</label>
+          <select id="chain-preset" class="select-sm">
+            <option value="social">Social / Reels</option>
+            <option value="podcast">Podcast</option>
+            <option value="raw">Raw</option>
+          </select>
+        </div>
+
+        <div class="chain-stages">
+          <button class="stage" data-stage="cleanup"><b>Cleanup</b><span>gate + rumble</span></button>
+          <span class="chain-arrow">→</span>
+          <button class="stage" data-stage="deesser"><b>De-ess</b><span>6.5 kHz</span></button>
+          <span class="chain-arrow">→</span>
+          <button class="stage" data-stage="compressor"><b>Comp</b><span>3:1</span></button>
+          <span class="chain-arrow">→</span>
+          <button class="stage" data-stage="eq"><b>EQ</b><span>voice</span></button>
+          <span class="chain-arrow">→</span>
+          <button class="stage" data-stage="limiter"><b>Limiter</b><span>−1 dB</span></button>
+        </div>
+
+        <label class="sfx-check" title="Hear the chain while you play back">
+          <input type="checkbox" id="chk-chain-preview" checked /><span>Preview chain</span>
+        </label>
+
+        <div class="loudness">
+          <button id="btn-measure" class="btn-ghost btn-sm">Measure</button>
+          <div class="lufs">
+            <span id="lufs-value">—</span><small>LUFS</small>
+          </div>
+          <div class="lufs lufs-tp">
+            <span id="tp-value">—</span><small>dBTP</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="statusbar">
+        <span id="status-msg">Ready.</span>
+        <span class="spacer"></span>
+        <span id="status-storage" class="mono-sm"></span>
+        <span id="status-sr" class="mono-sm"></span>
+      </div>
+
+    </section>
+
+    <div class="gutter gutter-right" data-target="right"></div>
+    <aside id="script-panel" class="panel panel-right"></aside>
+
+  </main>
+</div>
+
+<!-- Hidden file inputs used by the topbar -->
+<input type="file" id="file-project" accept=".json,application/json" hidden />
+
+<template id="tpl-help">
+  <div class="help">
+    <h3>Keyboard</h3>
+    <table>
+      <tr><td><kbd>Space</kbd></td><td>Play / pause from the playhead</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Record (arms the mic if it isn't already)</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Stop</td></tr>
+      <tr><td><kbd>Home</kbd></td><td>Playhead to start</td></tr>
+      <tr><td><kbd>S</kbd></td><td>Split the active track at the playhead</td></tr>
+      <tr><td><kbd>Delete</kbd></td><td>Delete the selected range (active track)</td></tr>
+      <tr><td><kbd>Shift</kbd>+<kbd>Delete</kbd></td><td>Ripple-delete the range across all tracks</td></tr>
+      <tr><td><kbd>M</kbd></td><td>Drop a marker at the playhead</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Duplicate the selected clip</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Nudge the selected clip 10 ms</td></tr>
+      <tr><td><kbd>+</kbd> / <kbd>−</kbd></td><td>Zoom in / out</td></tr>
+      <tr><td><kbd>F</kbd></td><td>Zoom to fit</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save project</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>E</kbd></td><td>Export audio</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo</td></tr>
+    </table>
+    <h3>Dragging in sound</h3>
+    <p>Drag an SFX card from the left panel onto any lane. Landing on an existing
+    lane adds it to that track; dropping below the last lane makes a new track for it.
+    Files from your desktop work the same way.</p>
+
+    <h3>Where things live</h3>
+    <p>Projects, takes and imported sound all sit in this browser's own storage —
+    nothing is uploaded anywhere, and clearing site data clears your work. Use
+    <b>Backup</b> to keep a copy of the project file, and export audio for anything
+    you actually want to keep.
+    <a href="./about.html" target="_blank" rel="noopener">About this project →</a></p>
+  </div>
+</template>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

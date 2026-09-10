@@ -1,0 +1,11 @@
+name = "statevo-sfx-proxy"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# Optional: lock the proxy to your own Pages origin instead of allowing any.
+# Leave unset (or empty) to allow every origin — fine for a read-only proxy.
+# [vars]
+# ALLOWED_ORIGINS = "https://phaser1980.github.io"
+
+# FREESOUND_API_KEY is a *secret*, not a var — never put it in this file.
+#   npx wrangler secret put FREESOUND_API_KEY
