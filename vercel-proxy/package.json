@@ -1,0 +1,7 @@
+{
+  "name": "statevo-sfx-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Freesound proxy for StateVO Web — adds CORS and keeps the API key server-side."
+}

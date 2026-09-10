@@ -297,14 +297,34 @@ export class SfxPanel extends EventTarget {
   /** Fetch a preview's bytes through the proxy so we can decode + import it. */
   async fetchSoundBytes(sound) {
     const url = this._previewUrl(sound);
+    if (!url) {
+      throw new Error(`No preview URL on "${sound?.name || "that sound"}" — try a different result.`);
+    }
     const res = await fetch(`${this.proxyUrl}/fetch?url=${encodeURIComponent(url)}`);
-    if (!res.ok) throw new Error(`Could not fetch audio (${res.status})`);
+    if (!res.ok) {
+      // Surface what the proxy actually said — "400" on its own sent us
+      // looking at the wrong layer once already.
+      const detail = await res.json().then((j) => j.error).catch(() => "");
+      throw new Error(`Could not fetch audio (${res.status})${detail ? ` — ${detail}` : ""}`);
+    }
     return res.arrayBuffer();
   }
 
+  /**
+   * Two shapes reach this: a full Freesound search result (nested `previews`),
+   * and the flat payload we serialise into the drag event (`url`). The "+"
+   * button hands over the former, a drag-and-drop the latter — so accept both
+   * rather than assuming, which is exactly the bug that made drops 400 while
+   * "+" worked fine.
+   */
   _previewUrl(sound) {
+    if (!sound) return null;
+    if (typeof sound.url === "string" && sound.url) return sound.url;
     const p = sound.previews || {};
-    return p["preview-hq-mp3"] || p["preview-lq-mp3"] || p["preview-hq-ogg"] || p["preview-lq-ogg"];
+    return (
+      p["preview-hq-mp3"] || p["preview-lq-mp3"] ||
+      p["preview-hq-ogg"] || p["preview-lq-ogg"] || null
+    );
   }
 
   /* ------------------------------------------------------------------ */

@@ -11,7 +11,8 @@ layer in whatever the scene needs afterward.
 | Folder | What it is |
 |---|---|
 | [`docs/`](./docs) | **StateVO Web** — the voice-first DAW, running entirely in a browser tab. This folder is what GitHub Pages serves, so what's committed here is what's live. |
-| [`cloudflare-worker/`](./cloudflare-worker) | A ~40-line Freesound proxy. The web app's SFX search needs it, because Freesound's API refuses direct browser calls. Free tier, one deploy. |
+| [`vercel-proxy/`](./vercel-proxy) | The Freesound proxy, as Vercel functions. **This is the one that's deployed** — see below. |
+| [`cloudflare-worker/`](./cloudflare-worker) | The same proxy as a Cloudflare Worker. Equivalent; use whichever platform you already have an account on. |
 | [`statevo/`](./statevo) | **StateVO Desktop** — the original PySide6 build. Better latency and real device control; needs installing. |
 | [`sfx-studio/`](./sfx-studio) | The standalone Flask SFX search tool that the web app's SFX panel grew out of. Kept because it still works and needs no Cloudflare account. |
 
@@ -54,13 +55,30 @@ Chrome / Edge / Brave, and Firefox. Safari's AudioWorklet and IndexedDB support
 means it mostly works but hasn't been tested. Recording needs HTTPS or
 localhost, which the Pages URL satisfies.
 
-## SFX search setup (one time, ~5 minutes)
+## SFX search setup
 
 Freesound sends no CORS headers, so a static page can't call the API directly.
-[`cloudflare-worker/README.md`](./cloudflare-worker/README.md) has the steps:
-get a free API key, `wrangler deploy`, `wrangler secret put FREESOUND_API_KEY`,
-then paste the Worker URL into the app's ⚙ SFX settings. The key stays on the
-Worker and never reaches the page.
+A proxy sits in between, and it also keeps the API key server-side rather than
+shipping it to every visitor of a public site.
+
+**Deployed at:** `https://statevo-sfx-proxy-phase-security.vercel.app`
+
+Two steps to finish it:
+
+1. **Set the key.** Vercel dashboard → `statevo-sfx-proxy` → Settings →
+   Environment Variables → `FREESOUND_API_KEY` (Production) → redeploy.
+   Free key: https://freesound.org/apiv2/apply/
+2. **Point the app at it.** ⚙ in the SFX panel, paste — note the `/api`:
+   ```
+   https://statevo-sfx-proxy-phase-security.vercel.app/api
+   ```
+   **Test connection** should say *Connected — API key is set.*
+
+`/api/health` reports `hasKey` so you can tell step 1 from step 2 at a glance.
+
+Details, and the Cloudflare equivalent, in
+[`vercel-proxy/README.md`](./vercel-proxy/README.md) and
+[`cloudflare-worker/README.md`](./cloudflare-worker/README.md).
 
 You get Freesound's 128 kbps preview mp3 — fine for background Foley under a
 vocal. For full-resolution files, download from Freesound directly and drag the
