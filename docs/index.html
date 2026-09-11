@@ -95,6 +95,20 @@
 
       <div id="timeline" class="timeline"></div>
 
+      <div id="clip-inspector" class="clipstrip" hidden>
+        <div class="clip-insp-name" id="clip-insp-name">—</div>
+        <div class="clip-insp-field">
+          <label class="lbl" for="clip-insp-gain">Gain</label>
+          <input type="range" id="clip-insp-gain" class="slider" min="-30" max="18" step="0.5" value="0" />
+          <span id="clip-insp-gain-val" class="mono-sm">0.0 dB</span>
+        </div>
+        <div class="clip-insp-field">
+          <span class="lbl">Measured</span>
+          <span id="clip-insp-lufs" class="mono-sm">—</span>
+        </div>
+        <button id="clip-insp-level" class="btn-ghost btn-sm" title="Re-apply auto-level to this clip">Level to bed</button>
+      </div>
+
       <div class="chainstrip">
         <div class="chain-presets">
           <label class="lbl">Voice chain</label>

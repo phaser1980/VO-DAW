@@ -10,9 +10,10 @@
 import { engine } from "./audio/engine.js";
 import { measureProject } from "./audio/render.js";
 import { VOICE_PRESETS, applyPreset } from "./audio/voicechain.js";
+import { integratedLoudness, samplePeakDb } from "./audio/loudness.js";
 import {
   makeProject, makeMarker, migrateProject, projectDuration,
-  orphanTakeIds, TrackKind, clipEnd, findClip,
+  orphanTakeIds, TrackKind, clipEnd, clipDuration, findClip,
 } from "./model.js";
 import {
   splitAt, deleteRange, rippleDeleteAll, duplicateClip, nudgeClip, compRange,
@@ -45,9 +46,13 @@ const app = {
   recordStartSec: 0,
   punch: null, // {startSec, endSec} when recording into a selection
   dirty: false,
+  selectedClip: null, // {clip, track} shown in the clip inspector strip
 };
 
 const $ = (sel) => document.querySelector(sel);
+
+/** DOM refs for the clip inspector strip — populated by wireClipInspector(). */
+const clipInsp = {};
 
 /* ------------------------------------------------------------------ */
 /* Boot                                                                */
@@ -71,6 +76,7 @@ async function init() {
   wireTopbar();
   wireTransport();
   wireChainStrip();
+  wireClipInspector();
   wireKeyboard();
   wireGutters();
 
@@ -156,7 +162,141 @@ function afterModelChange(reason = "") {
   app.script.renderMarkers();
   updateTotals();
   markDirty(true);
+  syncClipInspector();
   if (reason) setStatus(reason);
+}
+
+/* ------------------------------------------------------------------ */
+/* Clip inspector — gain + measured loudness for the selected clip     */
+/* ------------------------------------------------------------------ */
+
+function fmtSignedDb(db) {
+  const v = Number(db) || 0;
+  return `${v >= 0 ? "+" : ""}${v.toFixed(1)} dB`;
+}
+
+function wireClipInspector() {
+  clipInsp.root = $("#clip-inspector");
+  clipInsp.name = $("#clip-insp-name");
+  clipInsp.gain = $("#clip-insp-gain");
+  clipInsp.gainVal = $("#clip-insp-gain-val");
+  clipInsp.lufs = $("#clip-insp-lufs");
+  clipInsp.levelBtn = $("#clip-insp-level");
+
+  clipInsp.gain.addEventListener("input", () => {
+    if (!app.selectedClip) return;
+    const db = Number(clipInsp.gain.value);
+    app.selectedClip.clip.gainDb = db;
+    clipInsp.gainVal.textContent = fmtSignedDb(db);
+    app.timeline.draw();
+  });
+  clipInsp.gain.addEventListener("change", () => markDirty(true));
+
+  clipInsp.levelBtn.addEventListener("click", async () => {
+    if (!app.selectedClip) return;
+    const { clip } = app.selectedClip;
+    const cached = await engine.getTakeAudio(clip.takeId);
+    if (!cached || app.selectedClip?.clip !== clip) return;
+    const { integrated, peakDb } = measureClip(cached, clip);
+    const db = computeAutoLevelGainDb(integrated, peakDb, clipDuration(clip));
+    clip.gainDb = db;
+    clipInsp.gain.value = db;
+    clipInsp.gainVal.textContent = fmtSignedDb(db);
+    app.timeline.draw();
+    markDirty(true);
+  });
+}
+
+function sliceClipChannels(buffer, clip) {
+  const sr = buffer.sampleRate;
+  const startSample = clamp(Math.round(clip.sourceInSec * sr), 0, buffer.length);
+  const endSample = clamp(Math.round(clip.sourceOutSec * sr), startSample, buffer.length);
+  const channels = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    channels.push(buffer.getChannelData(c).subarray(startSample, endSample));
+  }
+  return channels;
+}
+
+/**
+ * True when a clip hasn't been trimmed — it still covers the whole take.
+ * That's the common case, including every fresh drop, and it's what lets
+ * measureClip reuse the take's off-thread pre-measurement instead of
+ * re-filtering audio on the main thread.
+ */
+function clipCoversWholeTake(clip, buffer) {
+  return clip.sourceInSec <= 0.001 && Math.abs(clip.sourceOutSec - buffer.duration) <= 0.001;
+}
+
+/**
+ * A clip's loudness. `cached.integrated`/`cached.peakDb` are the whole
+ * take's measurement, done off the main thread at import time (see
+ * peaks-worker.js) — reused as-is whenever the clip hasn't been trimmed.
+ * Only a trimmed clip falls back to measuring on the main thread, which is
+ * both a deliberate one-off edit and, in practice, usually a shorter range
+ * than the source.
+ */
+function measureClip(cached, clip) {
+  if (clipCoversWholeTake(clip, cached.buffer)) {
+    return { integrated: cached.integrated, peakDb: cached.peakDb };
+  }
+  const channels = sliceClipChannels(cached.buffer, clip);
+  const { integrated } = integratedLoudness(channels, cached.buffer.sampleRate);
+  return { integrated, peakDb: samplePeakDb(channels) };
+}
+
+/**
+ * Suggest a clip gain so a dropped SFX sits under the voice instead of
+ * blowing it out. Beds (>=3s) target integrated loudness, since that's what
+ * the ear tracks over time; short one-shots target peak instead — integrated
+ * loudness is meaningless below BS.1770's 400 ms gating window, and a door
+ * slam measured that way would come out absurd. Plain O(1) arithmetic on an
+ * already-measured value — the measuring itself is what has to stay off the
+ * main thread, see measureClip.
+ */
+function computeAutoLevelGainDb(integrated, peakDb, durationSec) {
+  if (durationSec >= 3) {
+    if (!isFinite(integrated)) return 0;
+    return clamp(-24 - integrated, -30, 12);
+  }
+  if (!isFinite(peakDb)) return 0;
+  return clamp(-12 - peakDb, -30, 12);
+}
+
+/** Auto-level gain for a freshly-imported take, or 0 if the feature's off / it's not landing on an SFX track. */
+function autoLevelGainFor(take, buffer, targetKind) {
+  if (!app.sfx.autoLevel || targetKind !== TrackKind.SFX) return 0;
+  const cached = engine.cache.get(take.id); // populated synchronously — importAudio already awaited it
+  if (!cached) return 0;
+  return computeAutoLevelGainDb(cached.integrated, cached.peakDb, buffer.duration);
+}
+
+async function showClipInspector(clip, track) {
+  app.selectedClip = { clip, track };
+  clipInsp.root.hidden = false;
+  clipInsp.name.textContent = clip.name || "clip";
+  clipInsp.gain.value = clip.gainDb;
+  clipInsp.gainVal.textContent = fmtSignedDb(clip.gainDb);
+  clipInsp.lufs.textContent = "measuring…";
+
+  const cached = await engine.getTakeAudio(clip.takeId);
+  if (!cached || app.selectedClip?.clip !== clip) return; // selection moved on while we awaited
+  const { integrated } = measureClip(cached, clip);
+  clipInsp.lufs.textContent = isFinite(integrated) ? `${integrated.toFixed(1)} LUFS` : "silent";
+}
+
+function hideClipInspector() {
+  app.selectedClip = null;
+  clipInsp.root.hidden = true;
+}
+
+/** Re-derive the inspector from the timeline's current selection — used after
+ * an edit (delete, undo, duplicate) that may have changed what's selected. */
+function syncClipInspector() {
+  const id = app.timeline.selectedClipId;
+  const found = id ? findClip(app.project, id) : null;
+  if (found) showClipInspector(found.clip, found.track);
+  else hideClipInspector();
 }
 
 function markDirty(v = true) {
@@ -201,8 +341,15 @@ function wireTimeline() {
   });
 
   tl.addEventListener("clipselect", (e) => {
-    const { clip } = e.detail;
+    const { clip, track } = e.detail;
     setStatus(`${clip.name || "clip"} · ${formatTime(clip.startSec)} → ${formatTime(clipEnd(clip))}`);
+    showClipInspector(clip, track);
+  });
+
+  tl.addEventListener("clipdeselect", () => hideClipInspector());
+
+  tl.addEventListener("trackvolume", (e) => {
+    engine.setTrackVolumeDb(e.detail.track.id, e.detail.db);
   });
 
   tl.addEventListener("dropfiles", async (e) => {
@@ -249,7 +396,7 @@ async function importSfx(sound, { timeSec, track }) {
     prog.update(0.3, "Downloading preview");
     const bytes = await app.sfx.fetchSoundBytes(sound);
     prog.update(0.65, "Decoding");
-    const { take } = await engine.importAudio(bytes, {
+    const { take, buffer } = await engine.importAudio(bytes, {
       name: shortName(sound.name),
       source: "freesound",
       meta: {
@@ -261,7 +408,9 @@ async function importSfx(sound, { timeSec, track }) {
     });
     pushUndo("add sfx");
     app.project.takes[take.id] = take;
-    app.timeline.placeTake(take, { timeSec, track, newTrackName: shortName(sound.name, 16) });
+    const targetKind = track ? track.kind : TrackKind.SFX;
+    const gainDb = autoLevelGainFor(take, buffer, targetKind);
+    app.timeline.placeTake(take, { timeSec, track, newTrackName: shortName(sound.name, 16), gainDb });
     prog.close();
     toastOk(`Added “${take.name}”`);
     markDirty(true);
@@ -290,7 +439,7 @@ async function importFiles(files, { timeSec, track }) {
     for (let i = 0; i < audio.length; i++) {
       const file = audio[i];
       prog.update((i + 0.5) / audio.length, file.name);
-      const { take } = await engine.importAudio(file, {
+      const { take, buffer } = await engine.importAudio(file, {
         name: shortName(file.name.replace(/\.[^.]+$/, "")),
         source: "file",
         meta: { originalName: file.name },
@@ -299,10 +448,14 @@ async function importFiles(files, { timeSec, track }) {
 
       // Only the first file honours the targeted track — otherwise a five-file
       // drop stacks five sounds on top of each other.
+      const dropTrack = i === 0 ? targetTrack : null;
+      const targetKind = dropTrack ? dropTrack.kind : TrackKind.SFX;
+      const gainDb = autoLevelGainFor(take, buffer, targetKind);
       const { clip } = app.timeline.placeTake(take, {
         timeSec: cursor,
-        track: i === 0 ? targetTrack : null,
+        track: dropTrack,
         newTrackName: shortName(file.name.replace(/\.[^.]+$/, ""), 16),
+        gainDb,
       });
       if (i === 0 && targetTrack) cursor = clipEnd(clip) + 0.05;
     }

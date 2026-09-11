@@ -10,6 +10,48 @@
 /** Bucket sizes in samples. ~1 ms at the bottom, ~1.5 s at the top. */
 const LEVEL_BUCKETS = [64, 256, 1024, 4096, 16384, 65536];
 
+/* ------------------------------------------------------------------ */
+/* Off-main-thread client                                              */
+/* ------------------------------------------------------------------ */
+
+let _worker = null;
+let _reqId = 0;
+const _pending = new Map();
+
+function getWorker() {
+  if (!_worker) {
+    _worker = new Worker(new URL("./peaks-worker.js", import.meta.url), { type: "module" });
+    _worker.onmessage = (e) => {
+      const { id, mono, peaks, integrated, peakDb } = e.data;
+      const resolve = _pending.get(id);
+      _pending.delete(id);
+      resolve?.({ mono, peaks, integrated, peakDb });
+    };
+  }
+  return _worker;
+}
+
+/**
+ * Downmix, build the peak pyramid, and pre-measure loudness in a Worker, so
+ * a multi-minute take doesn't stall the main thread on import — either
+ * building its waveform or, per `computeAutoLevelGainDb` in main.js,
+ * suggesting a level for it.
+ *
+ * `channels` are consumed — their buffers are transferred to the worker, so
+ * pass copies (e.g. `buffer.getChannelData(c).slice()`), never a live view
+ * into a decoded AudioBuffer.
+ * @param {Float32Array[]} channels
+ * @param {number} sampleRate
+ * @returns {Promise<{mono: Float32Array, peaks: object, integrated: number, peakDb: number}>}
+ */
+export function buildPeaksAsync(channels, sampleRate) {
+  return new Promise((resolve) => {
+    const id = ++_reqId;
+    _pending.set(id, resolve);
+    getWorker().postMessage({ id, channels, sampleRate }, channels.map((c) => c.buffer));
+  });
+}
+
 /**
  * @param {Float32Array} mono
  * @returns {{levels: {bucket:number, min:Float32Array, max:Float32Array}[], length:number}}

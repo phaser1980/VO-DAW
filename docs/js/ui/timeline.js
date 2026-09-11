@@ -28,6 +28,11 @@ const ADD_LANE_H = 34;
 const EDGE_GRAB_PX = 7;
 const FADE_HANDLE_PX = 11;
 
+function fmtFaderDb(db) {
+  const v = Number(db) || 0;
+  return `${v > 0 ? "+" : ""}${v.toFixed(1)} dB`;
+}
+
 const COLORS = {
   bg: "#12151b",
   lane: "#171b23",
@@ -296,6 +301,12 @@ export class Timeline extends EventTarget {
           <span class="tl-head-kind">${track.kind === TrackKind.VOICE ? "voice" : "sfx"}</span>
           <button class="tl-tbtn tl-tbtn-x" data-act="remove" title="Delete track">✕</button>
         </div>
+        ${track.collapsed ? "" : `
+        <div class="tl-head-fader">
+          <input type="range" class="tl-fader slider" min="-60" max="12" step="0.5"
+                 value="${track.volumeDb}" title="Track volume — double-click to reset" />
+          <span class="tl-fader-val mono-sm">${fmtFaderDb(track.volumeDb)}</span>
+        </div>`}
       `;
       el.addEventListener("mousedown", () => this.setActiveTrack(track.id));
       el.querySelector(".tl-collapse").addEventListener("click", (e) => {
@@ -326,6 +337,24 @@ export class Timeline extends EventTarget {
           this.resize();
         }),
       );
+
+      const faderEl = el.querySelector(".tl-fader");
+      if (faderEl) {
+        const valEl = el.querySelector(".tl-fader-val");
+        const applyLive = (db) => {
+          track.volumeDb = db;
+          valEl.textContent = fmtFaderDb(db);
+          this.dispatchEvent(new CustomEvent("trackvolume", { detail: { track, db } }));
+        };
+        faderEl.addEventListener("input", () => applyLive(Number(faderEl.value)));
+        faderEl.addEventListener("change", () => this._changed("track volume"));
+        faderEl.addEventListener("dblclick", () => {
+          faderEl.value = 0;
+          applyLive(0);
+          this._changed("track volume");
+        });
+      }
+
       this.heads.appendChild(el);
     }
 
@@ -475,6 +504,7 @@ export class Timeline extends EventTarget {
 
     // Empty lane: playhead + time selection drag.
     this.selectedClipId = null;
+    this.dispatchEvent(new CustomEvent("clipdeselect"));
     const st = this._snap(t);
     this.setPlayhead(st, true);
     this.selection = null;
@@ -593,6 +623,9 @@ export class Timeline extends EventTarget {
       this.selectedClipId = hit.clip.id;
       this.draw();
       this.dispatchEvent(new CustomEvent("selectionchange", { detail: this.selection }));
+      this.dispatchEvent(
+        new CustomEvent("clipselect", { detail: { clip: hit.clip, track: hit.row?.track } }),
+      );
     }
   }
 
@@ -693,7 +726,7 @@ export class Timeline extends EventTarget {
    * drop past the last lane makes a new one, and a multi-file drop only lets
    * the first file land on the targeted track so five sounds don't stack.
    */
-  placeTake(take, { timeSec = 0, track = null, name = null, newTrackName = null } = {}) {
+  placeTake(take, { timeSec = 0, track = null, name = null, newTrackName = null, gainDb = 0 } = {}) {
     let target = track;
     if (!target) {
       target = this.addTrack(newTrackName || take.name?.slice(0, 22) || "SFX", TrackKind.SFX);
@@ -704,6 +737,7 @@ export class Timeline extends EventTarget {
       startSec: Math.max(0, timeSec),
       sourceInSec: 0,
       sourceOutSec: take.durationSec,
+      gainDb,
       fadeInSec: 0.005,
       fadeOutSec: Math.min(0.02, take.durationSec / 4),
     });
@@ -714,6 +748,7 @@ export class Timeline extends EventTarget {
     this._changed("place clip");
     this.renderHeads();
     this.resize();
+    this.dispatchEvent(new CustomEvent("clipselect", { detail: { clip, track: target } }));
     return { clip, track: target };
   }
 

@@ -275,6 +275,27 @@ button:disabled { opacity: .5; cursor: default; }
 }
 .tl-head-add:hover { color: var(--cyan); border-color: var(--cyan); }
 
+.tl-head-fader { display: flex; align-items: center; gap: 6px; }
+.tl-head-fader .slider { width: 100%; height: 14px; }
+.tl-fader-val { font-size: 9px; min-width: 44px; text-align: right; white-space: nowrap; }
+
+/* ---------------------------------------------------------- clip inspector */
+
+.clipstrip {
+  display: flex; align-items: center; gap: 16px;
+  padding: 7px 12px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  flex: none; flex-wrap: wrap;
+}
+.clip-insp-name {
+  font-size: 12px; font-weight: 500;
+  max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.clip-insp-field { display: flex; align-items: center; gap: 7px; }
+.clip-insp-field .slider { width: 120px; }
+#clip-insp-gain-val { min-width: 52px; text-align: right; }
+
 /* ------------------------------------------------------------ chain strip */
 
 .chainstrip {

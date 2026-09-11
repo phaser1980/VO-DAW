@@ -4,15 +4,15 @@
  * Owns the single AudioContext. Everything that needs to make or hear sound
  * goes through here; the UI never touches Web Audio directly.
  *
- * Canonical-format rule (borrowed straight from the desktop app's
- * media_import.py): whatever comes in — a recording, an mp3 dropped from
- * Explorer, an SFX pull from Freesound — is decoded and re-encoded as WAV at
- * the project sample rate before it is stored. One predictable format on
- * disk, so nothing downstream has to care where a clip came from.
+ * Storage format: a recording has no original file, so it's encoded to WAV
+ * once and stored that way. An import (a file drop, an SFX pull) keeps its
+ * original bytes — decodeAudioData reads mp3/ogg/etc. straight back on
+ * reload, and re-encoding a multi-minute take to WAV on the way in was most
+ * of what used to stall the main thread on import.
  */
 
-import { encodeWav, toMono } from "./wav.js";
-import { buildPeaks } from "./peaks.js";
+import { encodeWav } from "./wav.js";
+import { buildPeaksAsync } from "./peaks.js";
 import { ensureWorklets, createVoiceChain } from "./voicechain.js";
 import { makeTake } from "../model.js";
 import { putAudio, getAudio } from "../storage.js";
@@ -47,8 +47,17 @@ export class Engine extends EventTarget {
     this._playStopAt = null;
 
     this.inputPeak = 0;
-    /** takeId -> { buffer: AudioBuffer, peaks, mono: Float32Array } */
+    /**
+     * takeId -> { buffer: AudioBuffer, peaks, mono: Float32Array, _bytes }
+     * LRU by insertion order (Map preserves it; `_touch` re-inserts on hit).
+     * Capped so a session with many long SFX imports can't grow unbounded —
+     * that was the main-thread GC thrash behind the import freeze.
+     */
     this.cache = new Map();
+    this.cacheBytes = 0;
+    this.cacheBudgetBytes = 320 * 1024 * 1024;
+    /** trackId -> live GainNode, while playing — lets a fader ride mid-playback. */
+    this._trackGainNodes = new Map();
   }
 
   /* ------------------------------------------------------------------ */
@@ -247,7 +256,7 @@ export class Engine extends EventTarget {
 
     const buffer = this.ctx.createBuffer(nCh, this._recFrames, sr);
     for (let c = 0; c < nCh; c++) buffer.copyToChannel(channels[c], c);
-    this._cacheTake(take.id, buffer);
+    await this._cacheTake(take.id, buffer);
 
     return { take, buffer };
   }
@@ -257,8 +266,12 @@ export class Engine extends EventTarget {
   /* ------------------------------------------------------------------ */
 
   /**
-   * Decode any browser-supported audio (wav/mp3/ogg/flac/m4a), resample to the
-   * project rate, store as WAV, and return a Take.
+   * Decode any browser-supported audio (wav/mp3/ogg/flac/m4a) and return a Take.
+   * The original bytes are stored as-is rather than re-encoded to WAV — an mp3
+   * pulled from Freesound stays an mp3 (decodeAudioData reads it back fine on
+   * reload), which is most of what made importing a multi-minute SFX stall the
+   * main thread. Recordings still go through encodeWav below since they start
+   * as raw PCM with no original file to keep.
    * @param {Blob|ArrayBuffer} data
    */
   async importAudio(data, { name = "Audio", source = "file", meta = {} } = {}) {
@@ -272,40 +285,80 @@ export class Engine extends EventTarget {
       throw new Error(`Could not decode "${name}" — unsupported or corrupt audio.`);
     }
 
-    // Cap at stereo. A 5.1 SFX pull would just waste storage here.
-    const nCh = Math.min(decoded.numberOfChannels, 2);
-    const channels = [];
-    for (let c = 0; c < nCh; c++) channels.push(decoded.getChannelData(c));
-
     const take = makeTake({
       name,
       sampleRate: decoded.sampleRate,
-      channels: nCh,
+      channels: Math.min(decoded.numberOfChannels, 2),
       durationSec: decoded.duration,
       source,
       meta,
     });
 
-    const blob = encodeWav(channels, decoded.sampleRate, 24);
-    await putAudio(take.id, blob, { name, source });
+    const mimeType = (data instanceof Blob && data.type) || "application/octet-stream";
+    await putAudio(take.id, new Blob([arrayBuffer], { type: mimeType }), { name, source });
 
     // decodeAudioData already resampled to ctx.sampleRate, so this buffer is
     // playback-ready as-is.
-    this._cacheTake(take.id, decoded);
+    await this._cacheTake(take.id, decoded);
     return { take, buffer: decoded };
   }
 
-  _cacheTake(takeId, buffer) {
-    const mono = toMono(
-      Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c)),
-    );
-    this.cache.set(takeId, { buffer, mono, peaks: buildPeaks(mono) });
-    return this.cache.get(takeId);
+  /**
+   * Downmix, build peaks, and pre-measure loudness — all off-thread (see
+   * peaks-worker.js) — and add the take to the LRU cache, evicting the
+   * oldest entries if it's now over budget.
+   *
+   * `integrated`/`peakDb` are the whole take's measurement, used to suggest
+   * an auto-level gain without re-filtering the audio on the main thread —
+   * see computeAutoLevelGainDb in main.js.
+   */
+  async _cacheTake(takeId, buffer) {
+    const channelCopies = [];
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      channelCopies.push(buffer.getChannelData(c).slice());
+    }
+    const { mono, peaks, integrated, peakDb } = await buildPeaksAsync(channelCopies, buffer.sampleRate);
+
+    const entry = { buffer, mono, peaks, integrated, peakDb };
+    entry._bytes = this._estimateBytes(entry);
+    this.cache.set(takeId, entry);
+    this.cacheBytes += entry._bytes;
+    this._evictIfNeeded();
+    return entry;
+  }
+
+  _estimateBytes(entry) {
+    let bytes = entry.buffer.length * entry.buffer.numberOfChannels * 4 + entry.mono.length * 4;
+    for (const level of entry.peaks.levels) bytes += (level.min.length + level.max.length) * 4;
+    return bytes;
+  }
+
+  /** Bump a cache entry to most-recently-used. */
+  _touch(takeId) {
+    const entry = this.cache.get(takeId);
+    if (!entry) return entry;
+    this.cache.delete(takeId);
+    this.cache.set(takeId, entry);
+    return entry;
+  }
+
+  /**
+   * Drop least-recently-used entries until back under budget. Skipped while
+   * playing — `play()` preloads everything it's about to schedule, but an
+   * eviction mid-playback could still race a take that's about to start.
+   */
+  _evictIfNeeded() {
+    if (this.playing) return;
+    for (const [id, entry] of this.cache) {
+      if (this.cacheBytes <= this.cacheBudgetBytes) break;
+      this.cache.delete(id);
+      this.cacheBytes -= entry._bytes;
+    }
   }
 
   /** Load (and cache) a take's audio. Returns null if the blob is gone. */
   async getTakeAudio(takeId) {
-    if (this.cache.has(takeId)) return this.cache.get(takeId);
+    if (this.cache.has(takeId)) return this._touch(takeId);
     const blob = await getAudio(takeId);
     if (!blob) return null;
     await this.ensureContext();
@@ -341,6 +394,21 @@ export class Engine extends EventTarget {
     this.stop();
 
     const tracks = audibleTracks(project);
+
+    // The LRU cache may have evicted a take that's about to play (e.g. an
+    // SFX auditioned earlier and not touched since) — make sure everything
+    // in the play window is actually loaded before scheduling any of it.
+    const needed = new Set();
+    for (const track of tracks) {
+      for (const clip of track.clips) {
+        if (clipDuration(clip) <= 0) continue;
+        if (clipEnd(clip) <= fromSec) continue;
+        if (opts.toSec != null && clip.startSec >= opts.toSec) continue;
+        needed.add(clip.takeId);
+      }
+    }
+    await Promise.all([...needed].map((id) => this.getTakeAudio(id)));
+
     const now = this.ctx.currentTime + 0.06; // small pre-roll for scheduling
     this._playStartCtx = now;
     this._playStartSec = fromSec;
@@ -361,6 +429,7 @@ export class Engine extends EventTarget {
       // Only the voice track goes through the chain; beds/SFX stay clean.
       trackGain.connect(track.kind === "voice" ? destination : this.masterGain);
       this._playNodes.push(trackGain);
+      this._trackGainNodes.set(track.id, trackGain);
 
       for (const clip of track.clips) {
         const dur = clipDuration(clip);
@@ -439,8 +508,15 @@ export class Engine extends EventTarget {
     if (this.chain) this.chain.setParams(settings);
   }
 
+  /** Ride a track's fader live while it's playing; always updates the model value too. */
+  setTrackVolumeDb(trackId, db) {
+    const g = this._trackGainNodes.get(trackId);
+    if (g) g.gain.value = dbToGain(db);
+  }
+
   stop() {
     clearTimeout(this._stopTimer);
+    this._trackGainNodes.clear();
     for (const n of this._playNodes) {
       try {
         if (n.stop) n.stop();

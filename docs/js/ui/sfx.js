@@ -56,6 +56,7 @@ export class SfxPanel extends EventTarget {
     this.proxyUrl = (await getPref("sfxProxyUrl", "")) || "";
     this.safeOnly = (await getPref("sfxSafeOnly", true)) !== false;
     this.maxDuration = (await getPref("sfxMaxDuration", "")) || "";
+    this.autoLevel = (await getPref("sfxAutoLevel", true)) !== false;
     this._syncSettingsUi();
     this._renderStatus();
   }
@@ -102,6 +103,10 @@ export class SfxPanel extends EventTarget {
         <select class="sfx-dur">
           ${MAX_DURATION_OPTIONS.map((o) => `<option value="${o.value}">${o.label}</option>`).join("")}
         </select>
+        <label class="sfx-check" title="Auto-adjust gain on drop so SFX don't overpower the voice track">
+          <input type="checkbox" class="sfx-autolevel" checked />
+          <span>Level to bed</span>
+        </label>
       </div>
 
       <div class="sfx-status"></div>
@@ -125,6 +130,7 @@ export class SfxPanel extends EventTarget {
     this.proxyEl = this.root.querySelector(".sfx-proxy");
     this.safeEl = this.root.querySelector(".sfx-safe");
     this.durEl = this.root.querySelector(".sfx-dur");
+    this.autoLevelEl = this.root.querySelector(".sfx-autolevel");
 
     this.tagsEl.innerHTML = QUICK_TAGS.map(
       (t) => `<button class="sfx-tag" data-tag="${esc(t)}">${esc(t)}</button>`,
@@ -166,6 +172,10 @@ export class SfxPanel extends EventTarget {
       await setPref("sfxMaxDuration", this.maxDuration);
       if (this.query) this.search(this.query);
     });
+    this.autoLevelEl.addEventListener("change", async () => {
+      this.autoLevel = this.autoLevelEl.checked;
+      await setPref("sfxAutoLevel", this.autoLevel);
+    });
 
     this.root.querySelector(".sfx-more-btn").addEventListener("click", () => this.loadMore());
 
@@ -197,6 +207,7 @@ export class SfxPanel extends EventTarget {
     this.proxyEl.value = this.proxyUrl;
     this.safeEl.checked = this.safeOnly;
     this.durEl.value = this.maxDuration;
+    this.autoLevelEl.checked = this.autoLevel;
     if (!this.proxyUrl) this.settingsEl.hidden = false;
   }
 
