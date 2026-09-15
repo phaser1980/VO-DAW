@@ -194,11 +194,11 @@ function wireClipInspector() {
 
   clipInsp.levelBtn.addEventListener("click", async () => {
     if (!app.selectedClip) return;
-    const { clip } = app.selectedClip;
+    const { clip, track } = app.selectedClip;
     const cached = await engine.getTakeAudio(clip.takeId);
     if (!cached || app.selectedClip?.clip !== clip) return;
     const { integrated, peakDb } = measureClip(cached, clip);
-    const db = computeAutoLevelGainDb(integrated, peakDb, clipDuration(clip));
+    const db = computeAutoLevelGainDb(integrated, peakDb, clipDuration(clip), targetFor(track.kind));
     clip.gainDb = db;
     clipInsp.gain.value = db;
     clipInsp.gainVal.textContent = fmtSignedDb(db);
@@ -246,21 +246,35 @@ function measureClip(cached, clip) {
 }
 
 /**
- * Suggest a clip gain so a dropped SFX sits under the voice instead of
- * blowing it out. Beds (>=3s) target integrated loudness, since that's what
- * the ear tracks over time; short one-shots target peak instead — integrated
- * loudness is meaningless below BS.1770's 400 ms gating window, and a door
- * slam measured that way would come out absurd. Plain O(1) arithmetic on an
- * already-measured value — the measuring itself is what has to stay off the
- * main thread, see measureClip.
+ * Per-track-kind level targets. SFX/beds sit well under the voice — a bed
+ * measured at -24 LUFS is roughly 10 LU under a -14 LUFS voice. Voice takes
+ * target a more moderate -18 LUFS pre-chain: that's a normal level for the
+ * compressor/limiter to then shape, not the final export loudness (the
+ * chain and the export preset still own that).
  */
-function computeAutoLevelGainDb(integrated, peakDb, durationSec) {
+const LEVEL_TARGETS = {
+  [TrackKind.SFX]: { lufs: -24, peakDb: -12 },
+  [TrackKind.VOICE]: { lufs: -18, peakDb: -6 },
+};
+function targetFor(kind) {
+  return LEVEL_TARGETS[kind] || LEVEL_TARGETS[TrackKind.SFX];
+}
+
+/**
+ * Suggest a clip gain toward `target`. A bed/long take (>=3s) targets
+ * integrated loudness, since that's what the ear tracks over time; a short
+ * one-shot targets peak instead — integrated loudness is meaningless below
+ * BS.1770's 400 ms gating window, and a door slam measured that way would
+ * come out absurd. Plain O(1) arithmetic on an already-measured value — the
+ * measuring itself is what has to stay off the main thread, see measureClip.
+ */
+function computeAutoLevelGainDb(integrated, peakDb, durationSec, target = LEVEL_TARGETS[TrackKind.SFX]) {
   if (durationSec >= 3) {
     if (!isFinite(integrated)) return 0;
-    return clamp(-24 - integrated, -30, 12);
+    return clamp(target.lufs - integrated, -30, 12);
   }
   if (!isFinite(peakDb)) return 0;
-  return clamp(-12 - peakDb, -30, 12);
+  return clamp(target.peakDb - peakDb, -30, 12);
 }
 
 /** Auto-level gain for a freshly-imported take, or 0 if the feature's off / it's not landing on an SFX track. */
@@ -268,7 +282,41 @@ function autoLevelGainFor(take, buffer, targetKind) {
   if (!app.sfx.autoLevel || targetKind !== TrackKind.SFX) return 0;
   const cached = engine.cache.get(take.id); // populated synchronously — importAudio already awaited it
   if (!cached) return 0;
-  return computeAutoLevelGainDb(cached.integrated, cached.peakDb, buffer.duration);
+  return computeAutoLevelGainDb(cached.integrated, cached.peakDb, buffer.duration, targetFor(TrackKind.SFX));
+}
+
+/** Auto-level every clip in the project in one pass — the "Normalize all" button. */
+async function normalizeProject() {
+  if (!app.project) return;
+  const jobs = [];
+  for (const track of app.project.tracks) {
+    for (const clip of track.clips) jobs.push({ clip, track });
+  }
+  if (!jobs.length) {
+    setStatus("Nothing to normalize yet.");
+    return;
+  }
+
+  const btn = $("#btn-normalize");
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "…";
+  pushUndo("normalize project");
+  let changed = 0;
+  try {
+    for (const { clip, track } of jobs) {
+      const cached = await engine.getTakeAudio(clip.takeId);
+      if (!cached) continue;
+      const { integrated, peakDb } = measureClip(cached, clip);
+      const db = computeAutoLevelGainDb(integrated, peakDb, clipDuration(clip), targetFor(track.kind));
+      if (Math.abs(db - clip.gainDb) > 0.05) changed++;
+      clip.gainDb = db;
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+  afterModelChange(`Normalized ${changed} clip${changed === 1 ? "" : "s"}.`);
 }
 
 async function showClipInspector(clip, track) {
@@ -935,6 +983,26 @@ function wireChainStrip() {
   });
 
   $("#btn-measure").addEventListener("click", measureLoudness);
+  $("#btn-normalize").addEventListener("click", normalizeProject);
+
+  $("#btn-chain-tune").addEventListener("click", () => {
+    const el = $("#chain-tune");
+    el.hidden = !el.hidden;
+    $("#btn-chain-tune").textContent = el.hidden ? "Tune ▾" : "Tune ▴";
+  });
+
+  document.querySelectorAll(".ct-param").forEach((input) => {
+    input.addEventListener("input", () => {
+      const { stage, sub, param } = input.dataset;
+      const vc = app.project.voiceChain;
+      const target = sub ? vc[stage][sub] : vc[stage];
+      target[param] = Number(input.value);
+      updateCtVal(input);
+      engine.updateChain(vc);
+      renderChainStages(); // preset dropdown no longer matches a hand-tuned chain, but the stage sub-labels should track
+    });
+    input.addEventListener("change", () => markDirty(true));
+  });
 }
 
 function renderChainStages() {
@@ -952,6 +1020,32 @@ function renderChainStages() {
   set("compressor", `${vc.compressor.ratio}:1`);
   set("eq", `HP ${vc.eq.highpassHz} Hz`);
   set("limiter", `${vc.limiter.ceilingDb} dB`);
+  syncChainTuneUi();
+}
+
+/** Reflect app.project.voiceChain onto the Tune drawer's sliders + readouts. */
+function syncChainTuneUi() {
+  const vc = app.project.voiceChain;
+  document.querySelectorAll(".ct-param").forEach((input) => {
+    const { stage, sub, param } = input.dataset;
+    const target = sub ? vc[stage]?.[sub] : vc[stage];
+    if (!target || target[param] === undefined) return;
+    input.value = target[param];
+    updateCtVal(input);
+  });
+}
+
+function updateCtVal(input) {
+  const span = input.parentElement.querySelector(".ct-val");
+  if (!span) return;
+  const v = Number(input.value);
+  switch (input.dataset.fmt) {
+    case "db": span.textContent = `${v >= 0 ? "+" : ""}${v.toFixed(1)} dB`; break;
+    case "hz": span.textContent = `${Math.round(v)} Hz`; break;
+    case "ratio": span.textContent = `${v.toFixed(1)}:1`; break;
+    case "ms": span.textContent = `${Math.round(v)} ms`; break;
+    default: span.textContent = String(v);
+  }
 }
 
 async function measureLoudness() {

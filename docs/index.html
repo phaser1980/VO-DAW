@@ -106,7 +106,7 @@
           <span class="lbl">Measured</span>
           <span id="clip-insp-lufs" class="mono-sm">—</span>
         </div>
-        <button id="clip-insp-level" class="btn-ghost btn-sm" title="Re-apply auto-level to this clip">Level to bed</button>
+        <button id="clip-insp-level" class="btn-ghost btn-sm" title="Re-apply auto-level to this clip">Auto-level</button>
       </div>
 
       <div class="chainstrip">
@@ -117,6 +117,7 @@
             <option value="podcast">Podcast</option>
             <option value="raw">Raw</option>
           </select>
+          <button id="btn-chain-tune" class="btn-ghost btn-sm" title="Fine-tune each stage's parameters">Tune ▾</button>
         </div>
 
         <div class="chain-stages">
@@ -136,6 +137,7 @@
         </label>
 
         <div class="loudness">
+          <button id="btn-normalize" class="btn-ghost btn-sm" title="Auto-level every clip in the project — beds/SFX to -24 LUFS, voice takes to -18 LUFS">Normalize all</button>
           <button id="btn-measure" class="btn-ghost btn-sm">Measure</button>
           <div class="lufs">
             <span id="lufs-value">—</span><small>LUFS</small>
@@ -143,6 +145,84 @@
           <div class="lufs lufs-tp">
             <span id="tp-value">—</span><small>dBTP</small>
           </div>
+        </div>
+      </div>
+
+      <div id="chain-tune" class="chain-tune" hidden>
+        <div class="ct-stage">
+          <b>Cleanup</b>
+          <label>Gate thresh
+            <input type="range" class="ct-param" data-stage="cleanup" data-param="thresholdDb" data-fmt="db" min="-60" max="-15" step="1" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+          <label>Highpass
+            <input type="range" class="ct-param" data-stage="cleanup" data-param="highpassHz" data-fmt="hz" min="20" max="200" step="5" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+          <label>Ratio
+            <input type="range" class="ct-param" data-stage="cleanup" data-param="ratio" data-fmt="ratio" min="1" max="10" step="0.5" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+        </div>
+        <div class="ct-stage">
+          <b>De-ess</b>
+          <label>Freq
+            <input type="range" class="ct-param" data-stage="deesser" data-param="freqHz" data-fmt="hz" min="2000" max="10000" step="100" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+          <label>Thresh
+            <input type="range" class="ct-param" data-stage="deesser" data-param="thresholdDb" data-fmt="db" min="-40" max="-10" step="1" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+          <label>Ratio
+            <input type="range" class="ct-param" data-stage="deesser" data-param="ratio" data-fmt="ratio" min="1" max="10" step="0.5" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+        </div>
+        <div class="ct-stage">
+          <b>Compressor</b>
+          <label>Thresh
+            <input type="range" class="ct-param" data-stage="compressor" data-param="thresholdDb" data-fmt="db" min="-40" max="0" step="1" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+          <label>Ratio
+            <input type="range" class="ct-param" data-stage="compressor" data-param="ratio" data-fmt="ratio" min="1" max="10" step="0.5" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+          <label>Makeup
+            <input type="range" class="ct-param" data-stage="compressor" data-param="makeupDb" data-fmt="db" min="0" max="12" step="0.5" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+        </div>
+        <div class="ct-stage">
+          <b>EQ</b>
+          <label>Highpass
+            <input type="range" class="ct-param" data-stage="eq" data-param="highpassHz" data-fmt="hz" min="20" max="200" step="5" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+          <label>Low shelf
+            <input type="range" class="ct-param" data-stage="eq" data-sub="lowShelf" data-param="gainDb" data-fmt="db" min="-6" max="6" step="0.5" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+          <label>Presence
+            <input type="range" class="ct-param" data-stage="eq" data-sub="presence" data-param="gainDb" data-fmt="db" min="-6" max="6" step="0.5" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+          <label>Air
+            <input type="range" class="ct-param" data-stage="eq" data-sub="air" data-param="gainDb" data-fmt="db" min="-6" max="6" step="0.5" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+        </div>
+        <div class="ct-stage">
+          <b>Limiter</b>
+          <label>Ceiling
+            <input type="range" class="ct-param" data-stage="limiter" data-param="ceilingDb" data-fmt="db" min="-3" max="-0.1" step="0.1" />
+            <span class="ct-val mono-sm"></span>
+          </label>
+          <label>Release
+            <input type="range" class="ct-param" data-stage="limiter" data-param="releaseMs" data-fmt="ms" min="10" max="200" step="5" />
+            <span class="ct-val mono-sm"></span>
+          </label>
         </div>
       </div>
 
