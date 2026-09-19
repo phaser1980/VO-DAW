@@ -19,6 +19,7 @@
 import { clamp, formatTime, uid } from "../util.js";
 import { clipDuration, clipEnd, makeClip, makeTrack, sortClips, TrackKind } from "../model.js";
 import { readPeaks } from "../audio/peaks.js";
+import { DEFAULT_AMOUNT as CHAR_DEFAULT_AMOUNT } from "../audio/character.js";
 
 const HEAD_W = 170;
 const LANE_H = 128; // tall enough for a voice track's character row too
@@ -369,7 +370,13 @@ export class Timeline extends EventTarget {
       if (charTypeEl) {
         const charAmtEl = el.querySelector(".tl-char-amt");
         charTypeEl.addEventListener("change", () => {
-          track.character = { type: charTypeEl.value, amount: track.character?.amount ?? 0.6 };
+          const type = charTypeEl.value;
+          // Each type's sweet spot sits at a different point on the dial —
+          // snap to it rather than carrying over an amount tuned for the
+          // previous type.
+          const amount = CHAR_DEFAULT_AMOUNT[type] ?? 0.6;
+          track.character = { type, amount };
+          charAmtEl.value = amount;
           this._changed("track character");
         });
         charAmtEl.addEventListener("input", () => {

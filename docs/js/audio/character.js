@@ -19,12 +19,20 @@
 import { dbToGain, clamp } from "../util.js";
 
 /**
+ * Per-type sweet spots — Phone's "on a rough line" character and Hall's
+ * "big room" character land at different points on a 0..1 dial, so a
+ * default that's right for one is off for the other. Used as the starting
+ * amount whenever a track's Character is switched to that type.
+ */
+export const DEFAULT_AMOUNT = { none: 0.6, phone: 0.75, hall: 0.5 };
+
+/**
  * @param {BaseAudioContext} ctx
  * @param {"none"|"phone"|"hall"} type
  * @param {number} amount  0..1
  * @returns {{input: AudioNode, output: AudioNode, setAmount: (v:number)=>void, dispose: ()=>void}}
  */
-export function createCharacterFX(ctx, type, amount = 0.6) {
+export function createCharacterFX(ctx, type, amount = DEFAULT_AMOUNT.none) {
   if (type === "phone") return createPhoneFX(ctx, amount);
   if (type === "hall") return createHallFX(ctx, amount);
   return createPassthroughFX(ctx);
