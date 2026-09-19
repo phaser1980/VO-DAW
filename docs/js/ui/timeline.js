@@ -21,7 +21,7 @@ import { clipDuration, clipEnd, makeClip, makeTrack, sortClips, TrackKind } from
 import { readPeaks } from "../audio/peaks.js";
 
 const HEAD_W = 170;
-const LANE_H = 104;
+const LANE_H = 128; // tall enough for a voice track's character row too
 const LANE_H_COLLAPSED = 34;
 const RULER_H = 30;
 const ADD_LANE_H = 34;
@@ -307,6 +307,16 @@ export class Timeline extends EventTarget {
                  value="${track.volumeDb}" title="Track volume — double-click to reset" />
           <span class="tl-fader-val mono-sm">${fmtFaderDb(track.volumeDb)}</span>
         </div>`}
+        ${!track.collapsed && track.kind === TrackKind.VOICE ? `
+        <div class="tl-head-char">
+          <select class="tl-char-type" title="Character effect">
+            <option value="none" ${!track.character?.type || track.character.type === "none" ? "selected" : ""}>Character: none</option>
+            <option value="phone" ${track.character?.type === "phone" ? "selected" : ""}>Phone</option>
+            <option value="hall" ${track.character?.type === "hall" ? "selected" : ""}>Hall / PA</option>
+          </select>
+          <input type="range" class="tl-char-amt slider" min="0" max="1" step="0.05"
+                 value="${track.character?.amount ?? 0.6}" title="Effect amount" />
+        </div>` : ""}
       `;
       el.addEventListener("mousedown", () => this.setActiveTrack(track.id));
       el.querySelector(".tl-collapse").addEventListener("click", (e) => {
@@ -355,15 +365,40 @@ export class Timeline extends EventTarget {
         });
       }
 
+      const charTypeEl = el.querySelector(".tl-char-type");
+      if (charTypeEl) {
+        const charAmtEl = el.querySelector(".tl-char-amt");
+        charTypeEl.addEventListener("change", () => {
+          track.character = { type: charTypeEl.value, amount: track.character?.amount ?? 0.6 };
+          this._changed("track character");
+        });
+        charAmtEl.addEventListener("input", () => {
+          const amount = Number(charAmtEl.value);
+          track.character = { type: track.character?.type || "none", amount };
+          this.dispatchEvent(new CustomEvent("trackcharacter", { detail: { track, amount } }));
+        });
+        charAmtEl.addEventListener("change", () => this._changed("track character amount"));
+      }
+
       this.heads.appendChild(el);
     }
 
-    const add = document.createElement("div");
-    add.className = "tl-head tl-head-add";
-    add.style.height = `${ADD_LANE_H}px`;
-    add.textContent = "+ New track";
-    add.addEventListener("click", () => this.addTrack());
-    this.heads.appendChild(add);
+    const addWrap = document.createElement("div");
+    addWrap.className = "tl-head tl-head-add-wrap";
+    addWrap.style.height = `${ADD_LANE_H}px`;
+    const addVoice = document.createElement("button");
+    addVoice.className = "tl-head-add";
+    addVoice.textContent = "+ Voice";
+    addVoice.title = "Add a voice track";
+    addVoice.addEventListener("click", () => this.addTrack(null, TrackKind.VOICE));
+    const addSfx = document.createElement("button");
+    addSfx.className = "tl-head-add";
+    addSfx.textContent = "+ SFX";
+    addSfx.title = "Add a beds/SFX track";
+    addSfx.addEventListener("click", () => this.addTrack(null, TrackKind.SFX));
+    addWrap.appendChild(addVoice);
+    addWrap.appendChild(addSfx);
+    this.heads.appendChild(addWrap);
     this.heads.style.height = `${addY + ADD_LANE_H}px`;
   }
 

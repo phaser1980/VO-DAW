@@ -73,8 +73,10 @@ export function makeTrack({
   muted = false,
   solo = false,
   collapsed = false,
+  // Only meaningful on a voice-kind track — see audio/character.js.
+  character = { type: "none", amount: 0.6 },
 } = {}) {
-  return { id, name, kind, clips, volumeDb, muted, solo, collapsed };
+  return { id, name, kind, clips, volumeDb, muted, solo, collapsed, character };
 }
 
 export function makeMarker({ id = uid("mk"), timeSec = 0, label = "Marker" } = {}) {

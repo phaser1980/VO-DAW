@@ -267,17 +267,26 @@ button:disabled { opacity: .5; cursor: default; }
   text-transform: uppercase; letter-spacing: .06em;
 }
 
+.tl-head-add-wrap { display: flex; gap: 4px; padding: 3px 5px; }
 .tl-head-add {
-  display: grid; place-items: center;
-  color: var(--text-faint); font-size: 11px;
-  border: 1px dashed var(--border); border-radius: 4px;
-  margin: 3px 5px; cursor: pointer;
+  flex: 1; display: grid; place-items: center;
+  color: var(--text-faint); font-size: 11px; font-family: inherit;
+  background: none; border: 1px dashed var(--border); border-radius: 4px;
+  cursor: pointer;
 }
 .tl-head-add:hover { color: var(--cyan); border-color: var(--cyan); }
 
 .tl-head-fader { display: flex; align-items: center; gap: 6px; }
 .tl-head-fader .slider { width: 100%; height: 14px; }
 .tl-fader-val { font-size: 9px; min-width: 44px; text-align: right; white-space: nowrap; }
+
+.tl-head-char { display: flex; align-items: center; gap: 5px; }
+.tl-char-type {
+  flex: none; width: 76px; font-size: 9px; padding: 1px 2px;
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-dim);
+}
+.tl-char-amt { flex: 1; height: 12px; min-width: 0; }
 
 /* ---------------------------------------------------------- clip inspector */
 

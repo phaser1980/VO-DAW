@@ -17,6 +17,7 @@
  */
 
 import { ensureWorklets, createVoiceChain } from "./voicechain.js";
+import { createCharacterFX } from "./character.js";
 import { encodeWav } from "./wav.js";
 import { integratedLoudness, truePeakDb, samplePeakDb } from "./loudness.js";
 import { audibleTracks, clipDuration, clipEnd, projectDuration } from "../model.js";
@@ -117,11 +118,23 @@ export async function renderMix(project, takeCache, opts = {}) {
     chain.output.connect(master);
   }
 
+  const fxList = [];
   for (const track of audibleTracks(project)) {
     const trackGain = ctx.createGain();
     trackGain.gain.value = dbToGain(track.volumeDb);
     // Voice goes through the chain; beds/SFX are already produced material.
-    trackGain.connect(chain && track.kind === "voice" ? chain.input : master);
+    // A voice track's character effect (Phone/Hall) sits upstream of the
+    // chain, same as in engine.js's live play() — see character.js.
+    const busDestination = chain && track.kind === "voice" ? chain.input : master;
+    const charType = track.kind === "voice" ? track.character?.type : null;
+    if (charType && charType !== "none") {
+      const fx = createCharacterFX(ctx, charType, track.character?.amount);
+      trackGain.connect(fx.input);
+      fx.output.connect(busDestination);
+      fxList.push(fx);
+    } else {
+      trackGain.connect(busDestination);
+    }
 
     for (const clip of track.clips) {
       const dur = clipDuration(clip);
@@ -151,6 +164,7 @@ export async function renderMix(project, takeCache, opts = {}) {
 
   const rendered = await ctx.startRendering();
   chain?.dispose();
+  fxList.forEach((fx) => fx.dispose());
   return rendered;
 }
 

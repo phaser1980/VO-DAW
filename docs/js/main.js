@@ -400,6 +400,10 @@ function wireTimeline() {
     engine.setTrackVolumeDb(e.detail.track.id, e.detail.db);
   });
 
+  tl.addEventListener("trackcharacter", (e) => {
+    engine.setCharacterAmount(e.detail.track.id, e.detail.amount);
+  });
+
   tl.addEventListener("dropfiles", async (e) => {
     const { files, timeSec, track } = e.detail;
     await importFiles(files, { timeSec, track });

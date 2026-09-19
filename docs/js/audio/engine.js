@@ -14,6 +14,7 @@
 import { encodeWav } from "./wav.js";
 import { buildPeaksAsync } from "./peaks.js";
 import { ensureWorklets, createVoiceChain } from "./voicechain.js";
+import { createCharacterFX } from "./character.js";
 import { makeTake } from "../model.js";
 import { putAudio, getAudio } from "../storage.js";
 import { uid, clamp, dbToGain } from "../util.js";
@@ -58,6 +59,8 @@ export class Engine extends EventTarget {
     this.cacheBudgetBytes = 320 * 1024 * 1024;
     /** trackId -> live GainNode, while playing — lets a fader ride mid-playback. */
     this._trackGainNodes = new Map();
+    /** trackId -> live character-FX instance, while playing — see character.js. */
+    this._characterFx = new Map();
   }
 
   /* ------------------------------------------------------------------ */
@@ -426,10 +429,23 @@ export class Engine extends EventTarget {
     for (const track of tracks) {
       const trackGain = this.ctx.createGain();
       trackGain.gain.value = dbToGain(track.volumeDb);
-      // Only the voice track goes through the chain; beds/SFX stay clean.
-      trackGain.connect(track.kind === "voice" ? destination : this.masterGain);
       this._playNodes.push(trackGain);
       this._trackGainNodes.set(track.id, trackGain);
+
+      // Only the voice track goes through the chain; beds/SFX stay clean. A
+      // voice track's character effect (Phone/Hall) sits upstream of that
+      // chain — it emulates something that happened to the voice before it
+      // reached the mic, not a polish step on top of the studio processing.
+      const busDestination = track.kind === "voice" ? destination : this.masterGain;
+      const charType = track.kind === "voice" ? track.character?.type : null;
+      if (charType && charType !== "none") {
+        const fx = createCharacterFX(this.ctx, charType, track.character?.amount);
+        trackGain.connect(fx.input);
+        fx.output.connect(busDestination);
+        this._characterFx.set(track.id, fx);
+      } else {
+        trackGain.connect(busDestination);
+      }
 
       for (const clip of track.clips) {
         const dur = clipDuration(clip);
@@ -514,9 +530,16 @@ export class Engine extends EventTarget {
     if (g) g.gain.value = dbToGain(db);
   }
 
+  /** Ride a track's character-effect amount live while it's playing. */
+  setCharacterAmount(trackId, amount) {
+    this._characterFx.get(trackId)?.setAmount(amount);
+  }
+
   stop() {
     clearTimeout(this._stopTimer);
     this._trackGainNodes.clear();
+    for (const fx of this._characterFx.values()) fx.dispose();
+    this._characterFx.clear();
     for (const n of this._playNodes) {
       try {
         if (n.stop) n.stop();
